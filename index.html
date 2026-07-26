@@ -57,7 +57,7 @@
       <h1>Ledger</h1>
       <select class="month-select" id="monthSelect"></select>
     </div>
-    <div>
+    <div style="padding:16px;">
       <div class="card-hero">
         <div class="label">Net Balance This Month</div>
         <div class="value" id="heroNet">$0.00</div>
@@ -194,6 +194,18 @@
           </div>
           <button type="submit" class="btn">Add Category</button>
         </form>
+      </section>
+
+      <section class="panel" style="margin-top:16px;">
+        <h2>Backup</h2>
+        <div class="btn-row">
+          <button type="button" class="btn secondary" id="btnExport">Export data</button>
+          <button type="button" class="btn secondary" id="btnImport">Import data</button>
+        </div>
+        <input type="file" id="fileInput" accept="application/json" style="display:none;">
+        <div class="io-note">
+          All data lives only on this device. Export a backup file regularly, and keep it somewhere safe (Files app, cloud drive) in case you switch phones or clear browser data.
+        </div>
       </section>
     </div>
   </div>
