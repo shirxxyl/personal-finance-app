@@ -275,7 +275,14 @@
   }
 
   function renderHomePanelSummaries() {
+    const isBillLikeItem = (i) => {
+      const cat = byId(i.categoryId);
+      if (!cat) return false;
+      const root = rootType(i.categoryId);
+      return root === 'expense' || root === 'debt';
+    };
     const recurTotal = recurringItems
+      .filter(isBillLikeItem)
       .filter(i => D.amountForMonth(i, month) > 0)
       .reduce((s, i) => s + D.amountForMonth(i, month), 0);
     $('summary-recurring').textContent = recurTotal > 0 ? `${fmtShort(recurTotal)} total` : '—';
@@ -304,7 +311,7 @@
   function renderHomeRecent() {
     const list = transactions.filter(t => D.monthOf(t.date) === month).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).slice(0, 5);
     $('homeRecentList').innerHTML = list.length ? list.map(txItemHTML).join('') +
-      `<div style="text-align:center;margin-top:8px;"><button class="btn secondary" data-goto="tx" style="width:auto;padding:8px 20px;font-size:13px;">View all transactions →</button></div>`
+      `<div style="text-align:center;margin-top:8px;"><button class="btn secondary" data-goto="tx" style="width:auto;padding:8px 20px;font-size:14px;">View all transactions →</button></div>`
       : '<div class="empty">No transactions yet this month — tap the "＋" button to add one</div>';
   }
 
@@ -359,15 +366,15 @@
       options: {
         indexAxis: 'y',
         plugins: {
-          legend: { position: 'bottom', labels: { color: '#1C2A44', font: { family: "'Inter'", size: 11 } } },
+          legend: { position: 'bottom', labels: { color: '#1C2A44', font: { family: "'Inter'", size: 12 } } },
           tooltip: { callbacks: { label: (ctx) => {
             const rowSum = ctx.chart.data.datasets.reduce((s, ds) => s + ds.data[ctx.dataIndex], 0);
             return `${ctx.dataset.label}: ${fmt(ctx.raw)} (${rowSum ? ((ctx.raw / rowSum) * 100).toFixed(0) : 0}%)`;
           } } }
         },
         scales: {
-          x: { stacked: true, ticks: { color: '#7A8699', font: { size: 10 } }, grid: { color: '#E3E7EE' } },
-          y: { stacked: true, ticks: { color: '#1C2A44', font: { size: 11 } }, grid: { display: false } }
+          x: { stacked: true, ticks: { color: '#7A8699', font: { size: 11 } }, grid: { color: '#E3E7EE' } },
+          y: { stacked: true, ticks: { color: '#1C2A44', font: { size: 12 } }, grid: { display: false } }
         }
       }
     });
@@ -382,8 +389,8 @@
         { label: 'Actual', data: incCats.map(c => subtreeActual(c.id, month)), backgroundColor: '#29A8C4' }
       ] },
       options: {
-        plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
-        scales: { y: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { color: '#E3E7EE' } }, x: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { display: false } } }
+        plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 12 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
+        scales: { y: { ticks: { color: '#7A8699', font: { size: 11 } }, grid: { color: '#E3E7EE' } }, x: { ticks: { color: '#7A8699', font: { size: 11 } }, grid: { display: false } } }
       }
     });
 
@@ -397,8 +404,8 @@
         { label: 'Actual', data: expCats.map(c => subtreeActual(c.id, month)), backgroundColor: '#E2636F' }
       ] },
       options: {
-        plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
-        scales: { y: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { color: '#E3E7EE' } }, x: { ticks: { color: '#7A8699', font: { size: 9 } }, grid: { display: false } } }
+        plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 12 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
+        scales: { y: { ticks: { color: '#7A8699', font: { size: 11 } }, grid: { color: '#E3E7EE' } }, x: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { display: false } } }
       }
     });
 
@@ -413,7 +420,7 @@
       data: { labels, datasets: [{ data, backgroundColor: palette, borderColor: '#F1F4F8', borderWidth: 2 }] },
       options: {
         plugins: {
-          legend: { position: 'bottom', labels: { color: '#1C2A44', font: { family: "'Inter'", size: 11 } } },
+          legend: { position: 'bottom', labels: { color: '#1C2A44', font: { family: "'Inter'", size: 12 } } },
           tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${fmt(ctx.raw)}` } }
         }
       }
@@ -440,11 +447,11 @@
         ]
       },
       options: {
-        plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 10 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
+        plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
         scales: {
-          y: { position: 'left', ticks: { color: '#7A8699', font: { size: 10 } }, grid: { color: '#E3E7EE' } },
-          y1: { position: 'right', ticks: { color: '#7A8699', font: { size: 10 } }, grid: { display: false } },
-          x: { ticks: { color: '#7A8699', font: { size: 9 } }, grid: { display: false } }
+          y: { position: 'left', ticks: { color: '#7A8699', font: { size: 11 } }, grid: { color: '#E3E7EE' } },
+          y1: { position: 'right', ticks: { color: '#7A8699', font: { size: 11 } }, grid: { display: false } },
+          x: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { display: false } }
         }
       }
     });
@@ -506,8 +513,8 @@
         { label: 'Actual', data: actual, backgroundColor: '#29A8C4' }
       ] },
       options: {
-        plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
-        scales: { y: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { color: '#E3E7EE' } }, x: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { display: false } } }
+        plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 12 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
+        scales: { y: { ticks: { color: '#7A8699', font: { size: 11 } }, grid: { color: '#E3E7EE' } }, x: { ticks: { color: '#7A8699', font: { size: 11 } }, grid: { display: false } } }
       }
     });
 
@@ -525,8 +532,8 @@
         { label: 'Expense budget', data: months.map(() => expMonthlyBudget), borderColor: '#7A8699', borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0 }
       ] },
       options: {
-        plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
-        scales: { y: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { color: '#E3E7EE' } }, x: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { display: false } } }
+        plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 12 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
+        scales: { y: { ticks: { color: '#7A8699', font: { size: 11 } }, grid: { color: '#E3E7EE' } }, x: { ticks: { color: '#7A8699', font: { size: 11 } }, grid: { display: false } } }
       }
     });
   }
@@ -554,8 +561,8 @@
     let rowClass = '';
     let toggleAttr = '';
     if (leaf) {
-      control = `<input type="number" class="mini-budget" data-budget-cat="${c.id}" value="${c.budget || ''}" placeholder="Budget" style="width:70px;padding:5px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px;">
-        <label style="display:flex;align-items:center;gap:3px;font-size:10.5px;color:var(--muted);white-space:nowrap;">
+      control = `<input type="number" class="mini-budget" data-budget-cat="${c.id}" value="${c.budget || ''}" placeholder="Budget" style="width:70px;padding:5px 6px;border:1px solid var(--line);border-radius:6px;font-size:13px;">
+        <label style="display:flex;align-items:center;gap:3px;font-size:11.5px;color:var(--muted);white-space:nowrap;">
           <input type="checkbox" data-rollover-cat="${c.id}" ${c.rollover ? 'checked' : ''}> ${icon('refresh', { color: 'var(--muted)', size: 12 })}
         </label>`;
     } else {
