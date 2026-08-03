@@ -185,7 +185,7 @@
       const remainingAfter = available - spent;
       const pct = available > 0 ? Math.min(100, (spent / available) * 100) : 100;
       const over = remainingAfter < 0;
-      const carryNote = carryIn !== 0 ? ` · ${carryIn > 0 ? '+' : ''}${fmtShort(carryIn)} carried in` : '';
+      const carryNote = carryIn !== 0 ? ` · ${carryIn > 0 ? '+' : '−'}${fmtShort(Math.abs(carryIn))}` : '';
       return `<div class="cat-row l${level}">
         <div class="name">${c.name}${recurTag} ${icon('refresh', { color: 'var(--gold)', size: 12 })}</div>
         <div class="bar-bg"><div class="bar-fill ${over ? 'over' : ''}" style="width:${pct}%"></div></div>
