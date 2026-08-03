@@ -10,7 +10,9 @@
   let month = D.currentMonth();
   let year = D.currentMonth().slice(0, 4);
   let chartRange = 'monthly';
-  let pieChart = null, trendChart = null, spendingSummaryChart = null, incomeBreakdownChart = null, yearlyBudgetChart = null, yearlyTrendChart = null;
+  let expandedHomeCats = new Set();
+  let expandedBudgetCats = new Set();
+  let pieChart = null, trendChart = null, spendingSummaryChart = null, incomeBreakdownChart = null, categoryBudgetChart = null, yearlyBudgetChart = null, yearlyTrendChart = null;
 
   // Small hand-drawn outline icons — used instead of emoji so the app looks the
   // same on every platform. `color` accepts any CSS color value, including var(--x).
@@ -160,7 +162,19 @@
   function catRowHTML(c, level, m) {
     const recurTag = catHasActiveRecurring(c.id) ? ' ' + icon('repeat', { color: 'var(--accent2)', size: 12 }) : '';
     const leaf = isLeaf(c.id);
-    if (leaf && c.rollover && c.rolloverStartMonth && m >= c.rolloverStartMonth) {
+    if (!leaf) {
+      const total = subtreeBudget(c.id);
+      const spent = subtreeActual(c.id, m);
+      const expanded = expandedHomeCats.has(c.id);
+      const pct = total > 0 ? Math.min(100, (spent / total) * 100) : (spent > 0 ? 100 : 0);
+      const over = total > 0 && spent > total;
+      return `<div class="cat-row l${level} expandable" data-home-toggle="${c.id}">
+        <div class="name"><span class="expand-arrow">${expanded ? '▾' : '▸'}</span>${c.name}${recurTag}</div>
+        <div class="bar-bg" style="${total === 0 && spent === 0 ? 'opacity:.15;' : ''}"><div class="bar-fill ${over ? 'over' : ''}" style="width:${pct}%"></div></div>
+        <div class="amt">${total > 0 ? `${fmtShort(spent)}/${fmtShort(total)}` : (spent > 0 ? `${fmtShort(spent)} this month` : '—')}</div>
+      </div>`;
+    }
+    if (c.rollover && c.rolloverStartMonth && m >= c.rolloverStartMonth) {
       const spent = subtreeActual(c.id, m);
       const prevMonth = prevMonthOf(m);
       const carryIn = prevMonth >= c.rolloverStartMonth ? (rolloverCumulativeRemaining(c.id, prevMonth) || 0) : 0;
@@ -203,7 +217,10 @@
   function renderHomeCatList() {
     let html = '';
     function walk(parentId, level) {
-      children(parentId).forEach(c => { html += catRowHTML(c, level, month); walk(c.id, level + 1); });
+      children(parentId).forEach(c => {
+        html += catRowHTML(c, level, month);
+        if (isLeaf(c.id) || expandedHomeCats.has(c.id)) walk(c.id, level + 1);
+      });
     }
     walk('exp', 2);
     $('homeCatList').innerHTML = html || '<div class="empty">No expense categories yet</div>';
@@ -212,7 +229,10 @@
   function renderHomeIncomeList() {
     let html = '';
     function walk(parentId, level) {
-      children(parentId).forEach(c => { html += catRowHTML(c, level, month); walk(c.id, level + 1); });
+      children(parentId).forEach(c => {
+        html += catRowHTML(c, level, month);
+        if (isLeaf(c.id) || expandedHomeCats.has(c.id)) walk(c.id, level + 1);
+      });
     }
     walk('inc', 2);
     $('homeIncomeList').innerHTML = html || '<div class="empty">No income categories yet</div>';
@@ -221,7 +241,10 @@
   function renderHomeDebtList() {
     let html = '';
     function walk(parentId, level) {
-      children(parentId).forEach(c => { html += catRowHTML(c, level, month); walk(c.id, level + 1); });
+      children(parentId).forEach(c => {
+        html += catRowHTML(c, level, month);
+        if (isLeaf(c.id) || expandedHomeCats.has(c.id)) walk(c.id, level + 1);
+      });
     }
     walk('debt', 2);
     $('homeDebtList').innerHTML = html || '<div class="empty">No debt categories yet</div>';
@@ -279,7 +302,7 @@
   async function renderCharts() {
     const ready = window.chartLibReady ? await window.chartLibReady : (typeof Chart !== 'undefined');
     if (!ready || typeof Chart === 'undefined') {
-      ['spendingSummaryChart', 'incomeBreakdownChart', 'pieChart', 'trendChart'].forEach(id => {
+      ['spendingSummaryChart', 'incomeBreakdownChart', 'categoryBudgetChart', 'pieChart', 'trendChart'].forEach(id => {
         const el = $(id);
         if (el && el.parentElement && !el.parentElement.querySelector('.chart-fallback')) {
           const note = document.createElement('div');
@@ -292,26 +315,29 @@
     }
     document.querySelectorAll('.chart-fallback').forEach(n => n.remove());
 
-    // Spending Summary — Expenses vs Savings vs Debt, share of the three combined
+    // Spending Summary — Budgeted vs Actual, Expenses vs Savings vs Debt
     const expA = subtreeActual('exp', month), savA = subtreeActual('sav', month), debtA = subtreeActual('debt', month);
-    const summarySum = expA + savA + debtA;
+    const expB = subtreeBudget('exp'), savB = subtreeBudget('sav'), debtB = subtreeBudget('debt');
     if (spendingSummaryChart) spendingSummaryChart.destroy();
     spendingSummaryChart = new Chart($('spendingSummaryChart').getContext('2d'), {
       type: 'bar',
-      data: { labels: ['This Month'], datasets: [
-        { label: 'Expenses', data: [expA], backgroundColor: '#E2636F' },
-        { label: 'Savings', data: [savA], backgroundColor: '#34A870' },
-        { label: 'Debt', data: [debtA], backgroundColor: '#6B7CFF' }
+      data: { labels: ['Budgeted', 'Actual'], datasets: [
+        { label: 'Expenses', data: [expB, expA], backgroundColor: '#E2636F' },
+        { label: 'Savings', data: [savB, savA], backgroundColor: '#34A870' },
+        { label: 'Debt', data: [debtB, debtA], backgroundColor: '#6B7CFF' }
       ] },
       options: {
         indexAxis: 'y',
         plugins: {
           legend: { position: 'bottom', labels: { color: '#1C2A44', font: { family: "'Inter'", size: 11 } } },
-          tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)} (${summarySum ? ((ctx.raw / summarySum) * 100).toFixed(0) : 0}%)` } }
+          tooltip: { callbacks: { label: (ctx) => {
+            const rowSum = ctx.chart.data.datasets.reduce((s, ds) => s + ds.data[ctx.dataIndex], 0);
+            return `${ctx.dataset.label}: ${fmt(ctx.raw)} (${rowSum ? ((ctx.raw / rowSum) * 100).toFixed(0) : 0}%)`;
+          } } }
         },
         scales: {
           x: { stacked: true, ticks: { color: '#7A8699', font: { size: 10 } }, grid: { color: '#E3E7EE' } },
-          y: { stacked: true, ticks: { display: false }, grid: { display: false } }
+          y: { stacked: true, ticks: { color: '#1C2A44', font: { size: 11 } }, grid: { display: false } }
         }
       }
     });
@@ -328,6 +354,21 @@
       options: {
         plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
         scales: { y: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { color: '#E3E7EE' } }, x: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { display: false } } }
+      }
+    });
+
+    // Expense Budget vs Actual — expected (budget) vs actual, per expense category
+    const expCats = children('exp');
+    if (categoryBudgetChart) categoryBudgetChart.destroy();
+    categoryBudgetChart = new Chart($('categoryBudgetChart').getContext('2d'), {
+      type: 'bar',
+      data: { labels: expCats.map(c => c.name), datasets: [
+        { label: 'Budgeted', data: expCats.map(c => subtreeBudget(c.id)), backgroundColor: '#7A869988' },
+        { label: 'Actual', data: expCats.map(c => subtreeActual(c.id, month)), backgroundColor: '#E2636F' }
+      ] },
+      options: {
+        plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
+        scales: { y: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { color: '#E3E7EE' } }, x: { ticks: { color: '#7A8699', font: { size: 9 } }, grid: { display: false } } }
       }
     });
 
@@ -348,19 +389,33 @@
       }
     });
 
-    // Daily Spending Trend
+    // Daily Spending Trend, plus a cumulative actual line vs. a budget-pace reference line
     const daysInMonth = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
     const daily = Array(daysInMonth).fill(0);
     transactions.filter(t => D.monthOf(t.date) === month).forEach(t => {
       if (rootType(t.categoryId) === 'expense') daily[Number(t.date.slice(8, 10)) - 1] += t.amount;
     });
+    let running = 0;
+    const cumulativeActual = daily.map(v => { running += v; return running; });
+    const dailyPace = expB / daysInMonth;
+    const budgetPace = daily.map((_, i) => dailyPace * (i + 1));
     if (trendChart) trendChart.destroy();
     trendChart = new Chart($('trendChart').getContext('2d'), {
-      type: 'bar',
-      data: { labels: daily.map((_, i) => String(i + 1)), datasets: [{ label: 'Daily spending', data: daily, backgroundColor: '#29A8C488', borderRadius: 3 }] },
+      data: {
+        labels: daily.map((_, i) => String(i + 1)),
+        datasets: [
+          { type: 'bar', label: 'Daily spending', data: daily, backgroundColor: '#29A8C488', borderRadius: 3, yAxisID: 'y' },
+          { type: 'line', label: 'Cumulative actual', data: cumulativeActual, borderColor: '#1C2A44', borderWidth: 2, pointRadius: 0, tension: 0.2, yAxisID: 'y1' },
+          { type: 'line', label: 'Budget pace', data: budgetPace, borderColor: '#7A8699', borderDash: [5, 4], borderWidth: 2, pointRadius: 0, yAxisID: 'y1' }
+        ]
+      },
       options: {
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => fmt(ctx.raw) } } },
-        scales: { y: { ticks: { color: '#7A8699', font: { size: 10 } }, grid: { color: '#E3E7EE' } }, x: { ticks: { color: '#7A8699', font: { size: 9 } }, grid: { display: false } } }
+        plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 10 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
+        scales: {
+          y: { position: 'left', ticks: { color: '#7A8699', font: { size: 10 } }, grid: { color: '#E3E7EE' } },
+          y1: { position: 'right', ticks: { color: '#7A8699', font: { size: 10 } }, grid: { display: false } },
+          x: { ticks: { color: '#7A8699', font: { size: 9 } }, grid: { display: false } }
+        }
       }
     });
   }
@@ -426,8 +481,9 @@
       }
     });
 
-    // 12-month trend line — all four categories
+    // 12-month trend line — all four categories, plus a dashed expense-budget reference line
     const monthLabels = months.map(m => m.slice(5, 7));
+    const expMonthlyBudget = subtreeBudget('exp');
     if (yearlyTrendChart) yearlyTrendChart.destroy();
     yearlyTrendChart = new Chart($('yearlyTrendChart').getContext('2d'), {
       type: 'line',
@@ -435,7 +491,8 @@
         { label: 'Income', data: months.map(m => subtreeActual('inc', m)), borderColor: '#29A8C4', backgroundColor: '#29A8C433', tension: 0.25 },
         { label: 'Expenses', data: months.map(m => subtreeActual('exp', m)), borderColor: '#E2636F', backgroundColor: '#E2636F33', tension: 0.25 },
         { label: 'Savings', data: months.map(m => subtreeActual('sav', m)), borderColor: '#34A870', backgroundColor: '#34A87033', tension: 0.25 },
-        { label: 'Debt', data: months.map(m => subtreeActual('debt', m)), borderColor: '#6B7CFF', backgroundColor: '#6B7CFF33', tension: 0.25 }
+        { label: 'Debt', data: months.map(m => subtreeActual('debt', m)), borderColor: '#6B7CFF', backgroundColor: '#6B7CFF33', tension: 0.25 },
+        { label: 'Expense budget', data: months.map(() => expMonthlyBudget), borderColor: '#7A8699', borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0 }
       ] },
       options: {
         plugins: { legend: { position: 'bottom', labels: { color: '#1C2A44', font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}` } } },
@@ -448,18 +505,39 @@
   // Categories are now plain organizational nodes — name + (for expense/saving) a budget.
   // Whether a given dollar is one-time or recurring is chosen per-entry in the Add Entry form,
   // not baked into the category.
+  function renderReadyToAssign() {
+    const incBudget = subtreeBudget('inc');
+    const allocated = subtreeBudget('exp') + subtreeBudget('sav') + subtreeBudget('debt');
+    const remaining = incBudget - allocated;
+    const el = $('readyToAssignValue');
+    if (!el) return;
+    el.textContent = fmt(remaining);
+    el.className = 'value' + (remaining < 0 ? ' neg' : '');
+  }
+
   function catManageRowHTML(c, level) {
     const root = rootType(c.id);
     const tag = level === 1 ? `<span class="tag">${root === 'expense' ? 'Expense' : root === 'saving' ? 'Saving' : root === 'debt' ? 'Debt' : 'Income'}</span>` : '';
+    const leaf = isLeaf(c.id);
     let control = '';
-    if (isLeaf(c.id)) {
+    let nameHTML = c.name;
+    let rowClass = '';
+    let toggleAttr = '';
+    if (leaf) {
       control = `<input type="number" class="mini-budget" data-budget-cat="${c.id}" value="${c.budget || ''}" placeholder="Budget" style="width:70px;padding:5px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px;">
         <label style="display:flex;align-items:center;gap:3px;font-size:10.5px;color:var(--muted);white-space:nowrap;">
           <input type="checkbox" data-rollover-cat="${c.id}" ${c.rollover ? 'checked' : ''}> ${icon('refresh', { color: 'var(--muted)', size: 12 })}
         </label>`;
+    } else {
+      const total = subtreeBudget(c.id);
+      const expanded = expandedBudgetCats.has(c.id);
+      nameHTML = `<span class="expand-arrow">${expanded ? '▾' : '▸'}</span>${c.name}`;
+      control = `<span class="cat-total-badge">${fmtShort(total)}</span>`;
+      rowClass = ' expandable';
+      toggleAttr = ` data-row-toggle="${c.id}"`;
     }
-    return `<div class="cat-manage-row l${level}">
-      <div class="name">${c.name}${tag}</div>
+    return `<div class="cat-manage-row l${level}${rowClass}"${toggleAttr}>
+      <div class="name">${nameHTML}${tag}</div>
       ${control}
       <button data-del-cat="${c.id}">✕</button>
     </div>`;
@@ -468,7 +546,10 @@
   function renderCatManage() {
     let html = '';
     function walk(parentId, level) {
-      children(parentId).forEach(c => { html += catManageRowHTML(c, level); walk(c.id, level + 1); });
+      children(parentId).forEach(c => {
+        html += catManageRowHTML(c, level);
+        if (isLeaf(c.id) || expandedBudgetCats.has(c.id)) walk(c.id, level + 1);
+      });
     }
     walk(null, 1);
     $('catManageTree').innerHTML = html;
@@ -476,6 +557,8 @@
     const parentOpts = categories.filter(c => c.level < 3)
       .map(c => `<option value="${c.id}">${'　'.repeat(c.level - 1)}${catPath(c.id)}</option>`).join('');
     $('newCatParent').innerHTML = parentOpts;
+
+    renderReadyToAssign();
   }
 
   // ============ overlays ============
@@ -758,6 +841,13 @@
 
     // tap a transaction row or a recurring item row to edit; "view all" link
     document.addEventListener('click', (e) => {
+      const homeToggle = e.target.closest('[data-home-toggle]');
+      if (homeToggle) {
+        const id = homeToggle.dataset.homeToggle;
+        if (expandedHomeCats.has(id)) expandedHomeCats.delete(id); else expandedHomeCats.add(id);
+        renderHomeCatList(); renderHomeIncomeList(); renderHomeDebtList();
+        return;
+      }
       const txEl = e.target.closest('[data-tx]');
       if (txEl) { const t = transactions.find(x => x.id === txEl.dataset.tx); if (t) openTxForm(t, 'tx'); return; }
       const recurEl = e.target.closest('[data-recur]');
@@ -787,22 +877,30 @@
 
     $('catManageTree').addEventListener('click', async (e) => {
       const delBtn = e.target.closest('[data-del-cat]');
-      if (!delBtn) return;
-      const id = delBtn.dataset.delCat;
-      const cat = byId(id);
-      const subtree = new Set(); (function collect(cid) { subtree.add(cid); children(cid).forEach(k => collect(k.id)); })(id);
-      const hasTx = transactions.some(t => subtree.has(t.categoryId));
-      const hasRecur = recurringItems.some(i => subtree.has(i.categoryId));
-      const hasSubcats = subtree.size > 1;
-      let msg = `Delete category "${cat ? cat.name : ''}"?`;
-      if (hasSubcats) msg += `\nIts subcategories will be deleted too.`;
-      if (hasTx || hasRecur) msg += `\nThis category has existing records — they'll be kept, but the category name will no longer resolve.`;
-      if (!confirm(msg)) return;
-      for (const cid of subtree) await D.del('categories', cid);
-      await reloadData();
-      renderCatManage();
-      renderAll();
-      toast('Category deleted');
+      if (delBtn) {
+        const id = delBtn.dataset.delCat;
+        const cat = byId(id);
+        const subtree = new Set(); (function collect(cid) { subtree.add(cid); children(cid).forEach(k => collect(k.id)); })(id);
+        const hasTx = transactions.some(t => subtree.has(t.categoryId));
+        const hasRecur = recurringItems.some(i => subtree.has(i.categoryId));
+        const hasSubcats = subtree.size > 1;
+        let msg = `Delete category "${cat ? cat.name : ''}"?`;
+        if (hasSubcats) msg += `\nIts subcategories will be deleted too.`;
+        if (hasTx || hasRecur) msg += `\nThis category has existing records — they'll be kept, but the category name will no longer resolve.`;
+        if (!confirm(msg)) return;
+        for (const cid of subtree) await D.del('categories', cid);
+        await reloadData();
+        renderCatManage();
+        renderAll();
+        toast('Category deleted');
+        return;
+      }
+      const toggleRow = e.target.closest('[data-row-toggle]');
+      if (toggleRow) {
+        const id = toggleRow.dataset.rowToggle;
+        if (expandedBudgetCats.has(id)) expandedBudgetCats.delete(id); else expandedBudgetCats.add(id);
+        renderCatManage();
+      }
     });
 
     $('catManageTree').addEventListener('change', async (e) => {

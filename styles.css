@@ -85,6 +85,8 @@ section.panel h2 .hint{ font-size:11px; color:var(--muted); font-family:'Inter',
 .cat-row .bar-fill{ height:100%; background:var(--sage); transition:width 300ms ease; }
 .cat-row .bar-fill.over{ background:var(--coral); }
 .cat-row .amt{ flex:0 0 auto; font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--muted); white-space:nowrap;}
+.cat-row.expandable{ cursor:pointer; }
+.cat-row .expand-arrow{ display:inline-block; width:12px; font-size:10px; color:var(--muted); }
 
 /* ---------- Bottom nav ---------- */
 .bottom-nav{
@@ -186,6 +188,9 @@ section.panel h2 .hint{ font-size:11px; color:var(--muted); font-family:'Inter',
 .cat-manage-row.l2{ padding-left:20px; }
 .cat-manage-row.l3{ padding-left:36px; color:var(--muted); font-size:12.5px; }
 .cat-manage-row .name{ flex:1; }
+.cat-manage-row.expandable{ cursor:pointer; }
+.cat-manage-row .expand-arrow{ display:inline-block; width:14px; font-size:10px; color:var(--muted); }
+.cat-manage-row .cat-total-badge{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-soft); white-space:nowrap;}
 .cat-manage-row .tag{
   font-size:10px; padding:2px 6px; border-radius:3px; border:1px solid currentColor; margin-left:6px;
 }
