@@ -12,6 +12,7 @@
   let chartRange = 'monthly';
   let expandedHomeCats = new Set();
   let expandedBudgetCats = new Set();
+  let expandedHomePanels = new Set();
   let pieChart = null, trendChart = null, spendingSummaryChart = null, incomeBreakdownChart = null, categoryBudgetChart = null, yearlyBudgetChart = null, yearlyTrendChart = null;
 
   // Small hand-drawn outline icons — used instead of emoji so the app looks the
@@ -132,11 +133,13 @@
     const income = subtreeActual('inc', month);
     const expense = subtreeActual('exp', month);
     const debt = subtreeActual('debt', month);
-    const net = income - expense - debt;
+    const saving = subtreeActual('sav', month);
+    const net = income - expense - debt - saving;
     $('heroNet').textContent = fmt(net);
     $('heroNet').className = 'value' + (net < 0 ? ' neg' : '');
     $('heroIncome').textContent = fmtShort(income);
     $('heroExpense').textContent = fmtShort(expense);
+    $('heroSaving').textContent = fmtShort(saving);
     $('heroDebt').textContent = fmtShort(debt);
   }
 
@@ -269,6 +272,33 @@
         <div class="amt ${isIncome ? 'income' : ''}">${isIncome ? '+' : '−'}${fmtShort(amt)}</div>
       </div>`;
     }).join('');
+  }
+
+  function renderHomePanelSummaries() {
+    const recurTotal = recurringItems
+      .filter(i => D.amountForMonth(i, month) > 0)
+      .reduce((s, i) => s + D.amountForMonth(i, month), 0);
+    $('summary-recurring').textContent = recurTotal > 0 ? `${fmtShort(recurTotal)} total` : '—';
+
+    const expA = subtreeActual('exp', month), expB = subtreeBudget('exp');
+    $('summary-expense').textContent = expB > 0 ? `${fmtShort(expA)}/${fmtShort(expB)}` : (expA > 0 ? `${fmtShort(expA)}` : '—');
+
+    const incA = subtreeActual('inc', month), incB = subtreeBudget('inc');
+    $('summary-income').textContent = incB > 0 ? `${fmtShort(incA)}/${fmtShort(incB)}` : (incA > 0 ? `${fmtShort(incA)}` : '—');
+
+    const debtA = subtreeActual('debt', month), debtB = subtreeBudget('debt');
+    $('summary-debt').textContent = debtB > 0 ? `${fmtShort(debtA)}/${fmtShort(debtB)}` : (debtA > 0 ? `${fmtShort(debtA)}` : '—');
+  }
+
+  function applyHomePanelCollapseState() {
+    const map = { recurring: 'homeRecurringStatus', expense: 'homeCatList', income: 'homeIncomeList', debt: 'homeDebtList' };
+    Object.entries(map).forEach(([key, elId]) => {
+      const el = $(elId);
+      const arrow = $('arrow-' + key);
+      const expanded = expandedHomePanels.has(key);
+      if (el) el.style.display = expanded ? '' : 'none';
+      if (arrow) arrow.textContent = expanded ? '▾' : '▸';
+    });
   }
 
   function renderHomeRecent() {
@@ -582,6 +612,8 @@
     renderHomeIncomeList();
     renderHomeDebtList();
     renderHomeRecurringStatus();
+    renderHomePanelSummaries();
+    applyHomePanelCollapseState();
     renderHomeRecent();
     renderTxPage();
     renderCatManage();
@@ -841,6 +873,13 @@
 
     // tap a transaction row or a recurring item row to edit; "view all" link
     document.addEventListener('click', (e) => {
+      const panelToggle = e.target.closest('[data-panel-toggle]');
+      if (panelToggle) {
+        const key = panelToggle.dataset.panelToggle;
+        if (expandedHomePanels.has(key)) expandedHomePanels.delete(key); else expandedHomePanels.add(key);
+        applyHomePanelCollapseState();
+        return;
+      }
       const homeToggle = e.target.closest('[data-home-toggle]');
       if (homeToggle) {
         const id = homeToggle.dataset.homeToggle;

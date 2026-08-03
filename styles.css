@@ -72,6 +72,13 @@ section.panel{
 }
 section.panel h2{ font-size:15px; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between;}
 section.panel h2 .hint{ font-size:11px; color:var(--muted); font-family:'Inter',sans-serif; font-weight:400;}
+section.panel h2.panel-toggle{ cursor:pointer; margin-bottom:0; }
+section.panel h2.panel-toggle .h2-left{ display:flex; align-items:center; gap:5px; }
+section.panel h2.panel-toggle .expand-arrow{ display:inline-block; width:12px; font-size:11px; color:var(--muted); }
+section.panel h2.panel-toggle .panel-summary{
+  font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:400; color:var(--ink-soft); white-space:nowrap;
+}
+.panel-body{ margin-top:12px; }
 
 /* ---------- Category progress list (home) ---------- */
 .cat-row{

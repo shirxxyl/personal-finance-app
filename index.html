@@ -64,6 +64,7 @@
         <div class="sub">
           <span>Income <span id="heroIncome">$0</span></span>
           <span>Expenses <span id="heroExpense">$0</span></span>
+          <span>Savings <span id="heroSaving">$0</span></span>
           <span>Debt <span id="heroDebt">$0</span></span>
         </div>
       </div>
@@ -82,23 +83,35 @@
       </div>
 
       <section class="panel">
-        <h2>This Month's Recurring Bills <span class="hint">occurred vs. upcoming, as of today</span></h2>
-        <div id="homeRecurringStatus"></div>
+        <h2 class="panel-toggle" data-panel-toggle="recurring">
+          <span class="h2-left"><span class="expand-arrow" id="arrow-recurring">▸</span>This Month's Recurring Bills</span>
+          <span class="panel-summary" id="summary-recurring">—</span>
+        </h2>
+        <div class="panel-body" id="homeRecurringStatus"></div>
       </section>
 
       <section class="panel">
-        <h2>Expense Overview <span class="hint">tracked against budget</span></h2>
-        <div id="homeCatList"></div>
+        <h2 class="panel-toggle" data-panel-toggle="expense">
+          <span class="h2-left"><span class="expand-arrow" id="arrow-expense">▸</span>Expense Overview</span>
+          <span class="panel-summary" id="summary-expense">—</span>
+        </h2>
+        <div class="panel-body" id="homeCatList"></div>
       </section>
 
       <section class="panel">
-        <h2>Income Breakdown</h2>
-        <div id="homeIncomeList"></div>
+        <h2 class="panel-toggle" data-panel-toggle="income">
+          <span class="h2-left"><span class="expand-arrow" id="arrow-income">▸</span>Income Breakdown</span>
+          <span class="panel-summary" id="summary-income">—</span>
+        </h2>
+        <div class="panel-body" id="homeIncomeList"></div>
       </section>
 
       <section class="panel">
-        <h2>Debt Overview <span class="hint">mortgage, car loan, etc.</span></h2>
-        <div id="homeDebtList"></div>
+        <h2 class="panel-toggle" data-panel-toggle="debt">
+          <span class="h2-left"><span class="expand-arrow" id="arrow-debt">▸</span>Debt Overview</span>
+          <span class="panel-summary" id="summary-debt">—</span>
+        </h2>
+        <div class="panel-body" id="homeDebtList"></div>
       </section>
 
       <section class="panel">
