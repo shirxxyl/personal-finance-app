@@ -1,313 +1,253 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
-<title>Ledger · Personal Finance Tracker</title>
+// ============ Data layer: IndexedDB wrapper + recurring-item engine ============
+const DB_NAME = 'financeLedgerDB';
+const DB_VERSION = 1;
+let dbInstance = null;
 
-<link rel="manifest" href="manifest.json">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Ledger">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<meta name="theme-color" content="#1C2A44">
+function openDB() {
+  return new Promise((resolve, reject) => {
+    if (dbInstance) return resolve(dbInstance);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('categories')) {
+        db.createObjectStore('categories', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('recurringItems')) {
+        db.createObjectStore('recurringItems', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('transactions')) {
+        const store = db.createObjectStore('transactions', { keyPath: 'id' });
+        store.createIndex('date', 'date', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('meta')) {
+        db.createObjectStore('meta', { keyPath: 'key' });
+      }
+    };
+    req.onsuccess = (e) => { dbInstance = e.target.result; resolve(dbInstance); };
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<script>
-  // Multi-source fallback for the chart library: try each URL in turn, first one to
-  // succeed wins. Keeps the app usable even if one CDN is blocked or unreachable.
-  window.chartLibReady = (function () {
-    var urls = [
-      'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js',
-      'https://cdn.staticfile.org/Chart.js/4.4.4/chart.umd.min.js',
-      'https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.4/chart.umd.min.js',
-      'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js'
-    ];
-    function tryLoad(i) {
-      return new Promise(function (resolve) {
-        if (i >= urls.length) { resolve(false); return; }
-        var s = document.createElement('script');
-        s.src = urls[i];
-        var settled = false;
-        var timer = setTimeout(function () { if (!settled) { settled = true; tryLoad(i + 1).then(resolve); } }, 4000);
-        s.onload = function () {
-          if (settled) return; settled = true; clearTimeout(timer);
-          if (typeof Chart !== 'undefined') resolve(true);
-          else tryLoad(i + 1).then(resolve);
-        };
-        s.onerror = function () {
-          if (settled) return; settled = true; clearTimeout(timer);
-          tryLoad(i + 1).then(resolve);
-        };
-        document.head.appendChild(s);
-      });
-    }
-    return tryLoad(0);
-  })();
-</script>
-<link rel="stylesheet" href="styles.css">
-</head>
-<body>
-<div id="app">
+function tx(storeName, mode) {
+  return openDB().then((db) => db.transaction(storeName, mode).objectStore(storeName));
+}
 
-  <!-- ============ HOME ============ -->
-  <div class="page active" id="page-home">
-    <div class="topbar">
-      <h1>Ledger</h1>
-      <select class="month-select" id="monthSelect"></select>
-    </div>
-    <div style="padding:16px;">
-      <div class="card-hero">
-        <div class="label">Net Balance This Month</div>
-        <div class="value" id="heroNet">$0.00</div>
-        <div class="sub">
-          <span>Income <span id="heroIncome">$0</span></span>
-          <span>Expenses <span id="heroExpense">$0</span></span>
-          <span>Debt <span id="heroDebt">$0</span></span>
-        </div>
-      </div>
+function getAll(storeName) {
+  return tx(storeName, 'readonly').then((store) => new Promise((resolve, reject) => {
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  }));
+}
 
-      <div class="cards-row">
-        <div class="card">
-          <div class="label">Budget Remaining</div>
-          <div class="value" id="cardBudgetLeft">$0</div>
-          <div class="foot" id="cardBudgetFoot">—</div>
-        </div>
-        <div class="card">
-          <div class="label">Savings Progress</div>
-          <div class="value" id="cardSaving">$0</div>
-          <div class="foot" id="cardSavingFoot">—</div>
-        </div>
-      </div>
+function put(storeName, value) {
+  return tx(storeName, 'readwrite').then((store) => new Promise((resolve, reject) => {
+    const req = store.put(value);
+    req.onsuccess = () => resolve(value);
+    req.onerror = () => reject(req.error);
+  }));
+}
 
-      <section class="panel">
-        <h2>This Month's Recurring Bills <span class="hint">occurred vs. upcoming, as of today</span></h2>
-        <div id="homeRecurringStatus"></div>
-      </section>
+function del(storeName, id) {
+  return tx(storeName, 'readwrite').then((store) => new Promise((resolve, reject) => {
+    const req = store.delete(id);
+    req.onsuccess = () => resolve(true);
+    req.onerror = () => reject(req.error);
+  }));
+}
 
-      <section class="panel">
-        <h2>Expense Overview <span class="hint">tracked against budget</span></h2>
-        <div id="homeCatList"></div>
-      </section>
+function getMeta(key) {
+  return tx('meta', 'readonly').then((store) => new Promise((resolve, reject) => {
+    const req = store.get(key);
+    req.onsuccess = () => resolve(req.result ? req.result.value : null);
+    req.onerror = () => reject(req.error);
+  }));
+}
 
-      <section class="panel">
-        <h2>Income Breakdown</h2>
-        <div id="homeIncomeList"></div>
-      </section>
+function setMeta(key, value) {
+  return put('meta', { key, value });
+}
 
-      <section class="panel">
-        <h2>Debt Overview <span class="hint">mortgage, car loan, etc.</span></h2>
-        <div id="homeDebtList"></div>
-      </section>
+// ---------- helpers ----------
+const uid = (p) => p + '_' + Math.random().toString(36).slice(2, 9);
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const currentMonth = () => todayISO().slice(0, 7);
+const monthOf = (dateStr) => dateStr.slice(0, 7);
 
-      <section class="panel">
-        <h2>Recent Transactions</h2>
-        <div id="homeRecentList"></div>
-      </section>
-    </div>
-  </div>
+// ---------- seed categories ----------
+// Categories are plain organizational nodes: a name, and (for expense/saving) a monthly budget.
+// Whether a given dollar is one-time or recurring is chosen per-entry in the Add Entry form —
+// it's not a property of the category. "Fixed Income" and "Extra Income" remain as two income
+// categories for organization, but both can hold one-time or recurring entries equally.
+const SEED_CATEGORIES = [
+  { id: 'exp', name: 'Expenses', level: 1, parentId: null, type: 'expense', budget: null },
+  { id: 'exp-groceries', name: 'Groceries', level: 2, parentId: 'exp', type: 'expense', budget: null },
+  { id: 'exp-dining', name: 'Dining Out', level: 2, parentId: 'exp', type: 'expense', budget: null },
+  { id: 'exp-shopping', name: 'Shopping', level: 2, parentId: 'exp', type: 'expense', budget: null },
+  { id: 'exp-house', name: 'House Appliance', level: 2, parentId: 'exp', type: 'expense', budget: null },
+  { id: 'exp-personal', name: 'Personal Care', level: 2, parentId: 'exp', type: 'expense', budget: null },
+  { id: 'exp-entertainment', name: 'Entertainment', level: 2, parentId: 'exp', type: 'expense', budget: null },
+  { id: 'exp-travel', name: 'Travel', level: 2, parentId: 'exp', type: 'expense', budget: null },
+  { id: 'exp-transportation', name: 'Transportation', level: 2, parentId: 'exp', type: 'expense', budget: null },
+  { id: 'exp-gifts', name: 'Gifts', level: 2, parentId: 'exp', type: 'expense', budget: null },
+  { id: 'exp-utilities', name: 'Utilities', level: 2, parentId: 'exp', type: 'expense', budget: null },
+  { id: 'exp-pet', name: 'Pet', level: 2, parentId: 'exp', type: 'expense', budget: null },
 
-  <!-- ============ CHARTS ============ -->
-  <div class="page" id="page-chart">
-    <div class="topbar">
-      <h1>Charts</h1>
-      <div class="seg" id="chartRangeSeg" style="max-width:180px;">
-        <button type="button" data-val="monthly" class="active">Monthly</button>
-        <button type="button" data-val="yearly">Yearly</button>
-      </div>
-    </div>
+  { id: 'sav', name: 'Savings', level: 1, parentId: null, type: 'saving', budget: null },
+  { id: 'sav-emergency', name: 'Emergency Fund', level: 2, parentId: 'sav', type: 'saving', budget: null },
+  { id: 'sav-invest', name: 'Investment', level: 2, parentId: 'sav', type: 'saving', budget: null },
+  { id: 'sav-retire', name: 'Retirement', level: 2, parentId: 'sav', type: 'saving', budget: null },
 
-    <!-- Monthly -->
-    <div id="chartMonthly" style="padding:16px;">
-      <div style="margin-bottom:12px;"><select class="month-select" id="monthSelectChart"></select></div>
-      <section class="panel">
-        <h2>Spending Summary <span class="hint">Expenses vs. Savings vs. Debt</span></h2>
-        <canvas id="spendingSummaryChart" height="90"></canvas>
-      </section>
-      <section class="panel">
-        <h2>Income Breakdown <span class="hint">expected vs. actual</span></h2>
-        <canvas id="incomeBreakdownChart" height="200"></canvas>
-      </section>
-      <section class="panel">
-        <h2>This Month's Spending Breakdown</h2>
-        <canvas id="pieChart" height="220"></canvas>
-      </section>
-      <section class="panel">
-        <h2>Daily Spending Trend</h2>
-        <canvas id="trendChart" height="180"></canvas>
-      </section>
-    </div>
+  { id: 'inc', name: 'Income', level: 1, parentId: null, type: 'income', budget: null },
+  { id: 'inc-fixed', name: 'Fixed Income', level: 2, parentId: 'inc', type: 'income', budget: null },
+  { id: 'inc-extra', name: 'Extra Income', level: 2, parentId: 'inc', type: 'income', budget: null },
 
-    <!-- Yearly -->
-    <div id="chartYearly" style="padding:16px; display:none;">
-      <div style="margin-bottom:12px;"><select class="month-select" id="yearSelect"></select></div>
-      <div class="cards-row" style="grid-template-columns:repeat(2,1fr);">
-        <div class="card"><div class="label">Total Income</div><div class="value" id="yearIncome">$0</div></div>
-        <div class="card"><div class="label">Total Expenses</div><div class="value" id="yearExpense">$0</div></div>
-        <div class="card"><div class="label">Total Savings</div><div class="value" id="yearSaving">$0</div></div>
-        <div class="card"><div class="label">Total Debt</div><div class="value" id="yearDebt">$0</div></div>
-      </div>
-      <section class="panel">
-        <h2>Budgeted vs. Actual <span class="hint">full-year budget target</span></h2>
-        <canvas id="yearlyBudgetChart" height="200"></canvas>
-      </section>
-      <section class="panel">
-        <h2>12-Month Trend</h2>
-        <canvas id="yearlyTrendChart" height="220"></canvas>
-      </section>
-      <section class="panel">
-        <h2>Biggest Budget Gaps <span class="hint">categories furthest from their annual target</span></h2>
-        <div id="yearlyGapsList"></div>
-      </section>
-    </div>
-  </div>
+  { id: 'debt', name: 'Debt', level: 1, parentId: null, type: 'debt', budget: null },
+  { id: 'debt-mortgage', name: 'Mortgage', level: 2, parentId: 'debt', type: 'debt', budget: null },
+  { id: 'debt-car', name: 'Car Loan', level: 2, parentId: 'debt', type: 'debt', budget: null },
+  { id: 'debt-student', name: 'Student Loan', level: 2, parentId: 'debt', type: 'debt', budget: null },
+  { id: 'debt-other', name: 'Other Debt', level: 2, parentId: 'debt', type: 'debt', budget: null },
+];
 
-  <!-- ============ CATEGORIES ============ -->
-  <div class="page" id="page-categories">
-    <div class="topbar">
-      <h1>Categories</h1>
-    </div>
-    <div style="padding:16px;">
-      <div id="catManageTree"></div>
+// Idempotent migration: adds the Debt root + starter subcategories for browsers that were
+// already seeded before Debt existed. Safe to call every time — no-ops if 'debt' is already there.
+async function ensureDebtRoot() {
+  const existing = await getAll('categories');
+  if (existing.some(c => c.id === 'debt')) return;
+  const debtSeed = SEED_CATEGORIES.filter(c => c.id === 'debt' || c.parentId === 'debt');
+  for (const c of debtSeed) await put('categories', c);
+}
 
-      <section class="panel" style="margin-top:16px;">
-        <h2>Add Category</h2>
-        <form id="addCatForm">
-          <div class="form-row">
-            <label>Parent Category</label>
-            <select id="newCatParent"></select>
-          </div>
-          <div class="form-row">
-            <label>Category Name</label>
-            <input type="text" id="newCatName" required placeholder="e.g. Health">
-          </div>
-          <div class="form-row" id="newCatBudgetRow">
-            <label>Monthly Budget ($, optional)</label>
-            <input type="number" id="newCatBudget" min="0" step="0.01">
-          </div>
-          <div class="form-row">
-            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-              <input type="checkbox" id="newCatRollover" style="width:auto;">
-              Roll over unused budget to next month (deficits carry forward too)
-            </label>
-          </div>
-          <button type="submit" class="btn">Add Category</button>
-        </form>
-      </section>
+// Schema version bump: category records no longer carry a "recurring" flag — recurring vs.
+// one-time is now chosen per-entry, not per-category. Existing categories just keep an unused
+// field if they have one; no reset needed for this change.
+const SCHEMA_KEY = 'seeded_v2_en';
 
-      <section class="panel" style="margin-top:16px;">
-        <h2>Backup</h2>
-        <div class="btn-row">
-          <button type="button" class="btn secondary" id="btnExport">Export data</button>
-          <button type="button" class="btn secondary" id="btnImport">Import data</button>
-        </div>
-        <input type="file" id="fileInput" accept="application/json" style="display:none;">
-        <div class="io-note">
-          All data lives only on this device. Export a backup file regularly, and keep it somewhere safe (Files app, cloud drive) in case you switch phones or clear browser data.
-        </div>
-      </section>
-    </div>
-  </div>
+async function ensureSeeded() {
+  const done = await getMeta(SCHEMA_KEY);
+  if (done) return;
+  for (const storeName of ['categories', 'recurringItems', 'transactions']) {
+    const all = await getAll(storeName);
+    for (const rec of all) await del(storeName, rec.id);
+  }
+  for (const c of SEED_CATEGORIES) await put('categories', c);
+  await setMeta(SCHEMA_KEY, true);
+}
 
-  <!-- ============ TRANSACTIONS (full list for the month) ============ -->
-  <div class="page" id="page-tx">
-    <div class="topbar">
-      <h1>Transactions</h1>
-      <select class="month-select" id="monthSelectTx"></select>
-    </div>
-    <div style="padding:16px;">
-      <section class="panel">
-        <h2>This Month</h2>
-        <div id="txList"></div>
-      </section>
-    </div>
-  </div>
+// ---------- category tree helpers ----------
+async function getCategories() { return getAll('categories'); }
 
-  <!-- ============ BOTTOM NAV ============ -->
-  <nav class="bottom-nav">
-    <button class="nav-item active" data-page="home"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 10.5 12 4l7 6.5V20a1 1 0 0 1-1 1h-4v-6h-4v6H6a1 1 0 0 1-1-1z" fill="currentColor" opacity="0.15"/><path d="M4 11 12 4l8 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10v9.5A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 21v-6h4v6" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>Home</button>
-    <button class="nav-item" data-page="categories"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.379a1.5 1.5 0 0 1 1.06.44l1.122 1.12A1.5 1.5 0 0 0 12.12 8H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" fill="currentColor" opacity="0.15"/><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.379a1.5 1.5 0 0 1 1.06.44l1.122 1.12A1.5 1.5 0 0 0 12.12 8H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>Categories</button>
-    <button class="nav-item" data-page="chart"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="12" width="4" height="7" rx="1" fill="currentColor" opacity="0.15"/><rect x="10" y="7" width="4" height="12" rx="1" fill="currentColor" opacity="0.15"/><rect x="16" y="3" width="4" height="16" rx="1" fill="currentColor" opacity="0.15"/><rect x="4" y="12" width="4" height="7" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="10" y="7" width="4" height="12" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="16" y="3" width="4" height="16" rx="1" stroke="currentColor" stroke-width="1.4"/></svg></span>Charts</button>
-  </nav>
-  <button class="fab-add" id="btnAddTx">＋</button>
+function buildIndex(categories) {
+  const byId = {}; categories.forEach(c => byId[c.id] = c);
+  return byId;
+}
 
-</div>
+function children(categories, parentId) {
+  return categories.filter(c => c.parentId === parentId);
+}
 
-<!-- ============ ADD / EDIT TRANSACTION ============ -->
-<div class="overlay" id="overlayTx">
-  <div class="sheet">
-    <div class="sheet-head">
-      <h3 id="txFormTitle">Add Entry</h3>
-      <button class="icon-btn" data-close="overlayTx">✕</button>
-    </div>
-    <form id="txForm">
-      <input type="hidden" id="txId">
-      <input type="hidden" id="txRecurItemId">
-      <div class="form-row">
-        <label>Type</label>
-        <div class="seg" id="txTypeSeg">
-          <button type="button" data-val="expense" class="active">Expense</button>
-          <button type="button" data-val="income">Income</button>
-          <button type="button" data-val="saving">Saving</button>
-          <button type="button" data-val="debt">Debt</button>
-        </div>
-      </div>
-      <div class="form-row">
-        <label>Frequency</label>
-        <div class="seg" id="txFreqSeg">
-          <button type="button" data-val="once" class="active">One-time</button>
-          <button type="button" data-val="recurring">Recurring</button>
-        </div>
-      </div>
-      <div class="form-row">
-        <label>Category</label>
-        <select id="txCategory" required></select>
-      </div>
-      <div class="form-row" id="txDateRow">
-        <label>Date</label>
-        <input type="date" id="txDate">
-      </div>
-      <div class="form-row" id="txRecurNameRow" style="display:none;">
-        <label>Name</label>
-        <input type="text" id="txRecurName" placeholder="e.g. Netflix / Paycheck — defaults to category name">
-      </div>
-      <div class="form-row">
-        <label id="txAmountLabel">Total Amount ($)</label>
-        <input type="number" id="txAmount" min="0" step="0.01" required placeholder="0.00">
-      </div>
-      <div class="form-row" id="txPeopleRow">
-        <label>People (incl. yourself — for splitting a bill)</label>
-        <input type="number" id="txPeople" min="1" step="1" value="1">
-        <div id="txShareHint" style="display:none; font-size:12px; color:var(--sage); margin-top:2px; font-weight:600;"></div>
-      </div>
-      <div class="form-row" id="txRecurDayRow" style="display:none;">
-        <label>Billing Day of Month</label>
-        <select id="txRecurDay" class="day-select"></select>
-      </div>
-      <div class="form-row" id="txRecurOverrideRow" style="display:none;">
-        <label>Apply As</label>
-        <div class="seg" id="txRecurModeSeg">
-          <button type="button" data-val="template" class="active">From this month on (permanent)</button>
-          <button type="button" data-val="override">This month only (reverts after)</button>
-        </div>
-      </div>
-      <div class="form-row" id="txNoteRow">
-        <label>Note (optional)</label>
-        <input type="text" id="txNote" placeholder="e.g. Dinner with friends">
-      </div>
-      <div class="btn-row">
-        <button type="button" class="btn secondary" id="btnStopRecurTx" style="display:none;">Stop Recurring</button>
-        <button type="button" class="btn danger" id="btnDeleteTx" style="display:none;">Delete</button>
-        <button type="submit" class="btn">Save</button>
-      </div>
-    </form>
-  </div>
-</div>
+function isLeaf(categories, id) {
+  return children(categories, id).length === 0;
+}
 
-<div class="toast" id="toast"></div>
+function ancestors(categories, id) {
+  const byId = buildIndex(categories);
+  const chain = [];
+  let c = byId[id];
+  while (c) { chain.unshift(c); c = c.parentId ? byId[c.parentId] : null; }
+  return chain;
+}
 
-<script src="db.js"></script>
-<script src="app.js"></script>
-</body>
-</html>
+function catPath(categories, id) {
+  return ancestors(categories, id).map(c => c.name).join(' / ');
+}
+
+function leafDescendants(categories, id) {
+  const kids = children(categories, id);
+  if (kids.length === 0) return [id];
+  return kids.flatMap(k => leafDescendants(categories, k.id));
+}
+
+// ---------- recurring-item engine ----------
+// item.history: [{month:'YYYY-MM', amount}] ascending by month
+// item.overrides: {'YYYY-MM': amount} — income items only
+// item.endMonth: 'YYYY-MM' | null — the month this item stopped (inclusive), history before it is kept
+function amountForMonth(item, month) {
+  if (item.endMonth && month >= item.endMonth) return 0;
+  if (item.overrides && item.overrides[month] !== undefined) return item.overrides[month];
+  const history = (item.history || []).filter(h => h.month <= month);
+  if (history.length === 0) return 0;
+  history.sort((a, b) => a.month.localeCompare(b.month));
+  return history[history.length - 1].amount;
+}
+
+function daysInMonth(month) {
+  return new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+}
+
+// The actual billing date for this item in a given month (capped to the last day of short months).
+function billingDateForMonth(item, month) {
+  const day = Math.min(Math.max(item.dayOfMonth || 1, 1), daysInMonth(month));
+  return `${month}-${String(day).padStart(2, '0')}`;
+}
+
+// Whether this month's charge/deposit has already happened as of today.
+function hasOccurred(item, month, todayStr) {
+  return billingDateForMonth(item, month) <= todayStr;
+}
+
+async function getRecurringItems() { return getAll('recurringItems'); }
+
+async function getRecurringItemsByCategory(categoryId) {
+  const all = await getRecurringItems();
+  return all.filter(i => i.categoryId === categoryId);
+}
+
+async function recurringSpentForSubtree(categories, catId, month) {
+  const ids = new Set(leafDescendants(categories, catId));
+  const items = await getRecurringItems();
+  return items.filter(i => ids.has(i.categoryId))
+    .reduce((s, i) => s + amountForMonth(i, month), 0);
+}
+
+// ---------- transaction helpers ----------
+async function getTransactions() { return getAll('transactions'); }
+
+async function transactionsForMonth(month) {
+  const all = await getTransactions();
+  return all.filter(t => monthOf(t.date) === month);
+}
+
+async function txSpentForSubtree(categories, catId, month) {
+  const ids = new Set(leafDescendants(categories, catId));
+  const all = await transactionsForMonth(month);
+  return all.filter(t => ids.has(t.categoryId)).reduce((s, t) => s + t.amount, 0);
+}
+
+async function subtreeActual(categories, catId, month) {
+  const [rec, txs] = await Promise.all([
+    recurringSpentForSubtree(categories, catId, month),
+    txSpentForSubtree(categories, catId, month)
+  ]);
+  return rec + txs;
+}
+
+function subtreeBudget(categories, catId) {
+  const kids = children(categories, catId);
+  if (kids.length === 0) {
+    const byId = buildIndex(categories);
+    return byId[catId].budget || 0;
+  }
+  return kids.reduce((s, k) => s + subtreeBudget(categories, k.id), 0);
+}
+
+window.LedgerDB = {
+  openDB, getAll, put, del, getMeta, setMeta,
+  uid, todayISO, currentMonth, monthOf,
+  ensureSeeded, ensureDebtRoot, getCategories, buildIndex, children, isLeaf, ancestors, catPath,
+  leafDescendants,
+  amountForMonth, daysInMonth, billingDateForMonth, hasOccurred,
+  getRecurringItems, getRecurringItemsByCategory,
+  recurringSpentForSubtree, getTransactions, transactionsForMonth, txSpentForSubtree,
+  subtreeActual, subtreeBudget
+};
